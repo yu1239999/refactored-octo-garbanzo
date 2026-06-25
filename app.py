@@ -4,12 +4,12 @@ import io
 from PIL import Image
 import numpy as np
 
-st.set_page_config(page_title="範囲指定で切り抜き", page_icon="✂️")
+st.set_page_config(page_title="自由線で切り抜き", page_icon="✂️")
 
-st.title("✂️ 大まかに囲って切り抜き")
-st.write("画像の上で囲んだ部分だけを残します")
+st.title("✂️ 自由線で囲って切り抜き")
+st.write("画像の上を自由に線で囲んで、その内側だけを残します")
 
-# ===== 画像をリサイズ =====
+# ===== 画像リサイズ =====
 def resize_image(img, max_size=600):
     if max(img.size) > max_size:
         ratio = max_size / max(img.size)
@@ -17,9 +17,9 @@ def resize_image(img, max_size=600):
         return img.resize(new_size, Image.Resampling.LANCZOS)
     return img
 
-# ===== 範囲指定で切り抜く関数 =====
-def crop_by_mask(image, mask_data):
-    """マスクデータを使って、囲んだ部分だけを残す"""
+# ===== 囲んだ部分だけを残す関数 =====
+def keep_inside_mask(image, mask_data):
+    """自由線で囲んだ内側だけを残す"""
     if mask_data is None:
         return image
     
@@ -31,13 +31,17 @@ def crop_by_mask(image, mask_data):
     mask = mask_data[:, :, :3]
     
     # 描画された部分（色が付いている部分）を検出
-    # 黒以外の部分＝ユーザーが描いた部分
-    drawn_mask = np.any(mask > 100, axis=2)
+    drawn_mask = np.any(mask > 50, axis=2)
     
-    # 描画されていない部分（外側）を透明に
-    img_array[~drawn_mask, 3] = 0
+    # 描画された部分（内側）をそのまま残す
+    # 外側を透明に（アルファチャンネルを0に）
+    result = image.copy()
+    result_array = np.array(result)
     
-    return Image.fromarray(img_array, "RGBA")
+    # 描画されていない部分を透明に
+    result_array[~drawn_mask, 3] = 0
+    
+    return Image.fromarray(result_array, "RGBA")
 
 # ===== UI =====
 uploaded_file = st.file_uploader(
@@ -51,44 +55,41 @@ if uploaded_file is not None:
     original_size = img.size
     img_display = resize_image(img, max_size=600)
     
-    st.subheader("🖍️ 残したい部分を囲んでね")
-    st.write("画像の上をドラッグして、残したい部分を囲んでください")
+    st.subheader("🖍️ 残したい部分を自由に囲んでね")
+    st.write("マウスをドラッグして、残したい部分を囲んでください")
     
-    # ===== 描画キャンバス =====
+    # 描画キャンバス（自由線モード）
     canvas_result = st_canvas.st_canvas(
-        fill_color="rgba(255, 0, 0, 0.2)",  # 塗りつぶし色
-        stroke_width=5,
-        stroke_color="#FF0000",
+        fill_color="rgba(255, 0, 0, 0.1)",  # 囲んだ内側の塗りつぶし（薄い赤）
+        stroke_width=3,
+        stroke_color="#FF0000",  # 赤い線
         background_image=img_display,
         update_streamlit=True,
         height=img_display.height,
         width=img_display.width,
-        drawing_mode="rect",  # 四角で囲む
-        key="crop_canvas",
+        drawing_mode="freedraw",  # ← これで自由線！
+        key="freedraw_canvas",
     )
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        if st.button("✂️ この範囲で切り抜く！", use_container_width=True):
+        if st.button("✂️ 囲んだ内側を切り抜く！", use_container_width=True):
             if canvas_result.image_data is not None:
                 with st.spinner("切り抜き中..."):
-                    # 範囲指定で切り抜き
-                    result = crop_by_mask(img_display, canvas_result.image_data)
-                    # 元のサイズに戻す
+                    result = keep_inside_mask(img_display, canvas_result.image_data)
                     result = result.resize(original_size, Image.Resampling.LANCZOS)
                     
                     st.success("✅ 切り抜き完了！")
                     st.image(result, use_container_width=True)
                     
-                    # ダウンロード
                     buf = io.BytesIO()
                     result.save(buf, format="PNG")
                     buf.seek(0)
                     st.download_button(
                         "⬇️ ダウンロード",
                         buf.getvalue(),
-                        file_name="囲んで切り抜き.png",
+                        file_name="自由線で切り抜き.png",
                         mime="image/png"
                     )
             else:
-                st.warning("⚠️ まず画像の上で範囲を指定してください！")
+                st.warning("⚠️ まず画像の上で自由に線を描いてください！")
