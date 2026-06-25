@@ -1,22 +1,14 @@
 import streamlit as st
 import io
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance
 import zipfile
 from datetime import datetime
 from rembg import remove, new_session
-import numpy as np
 
 st.set_page_config(page_title="西垣の切り抜き部屋 - 商品版", page_icon="📦")
 
-st.title("📦 西垣の切り抜き部屋（輪郭を残す！）")
-st.write("商品の輪郭（縁）の中は全部残します。")
-
-# ===== エッジを強調する関数 =====
-def enhance_edges(img):
-    """輪郭（エッジ）を強調して、AIが境界を認識しやすくする"""
-    # シャープネスを強める
-    img = img.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
-    return img
+st.title("📦 西垣の切り抜き部屋（白背景専用）")
+st.write("背景の白だけを消して、商品はそのまま残します。")
 
 # ===== 画像リサイズ =====
 def resize_image(img, max_size=800):
@@ -52,7 +44,17 @@ if uploaded_files:
             img = resize_image(img, max_size=300)
             st.image(img, caption=file.name[:15], use_container_width=True)
     
-    if st.button("✂️ 輪郭を残して切り抜く！", use_container_width=True):
+    # ===== コントラスト調整用スライダー =====
+    contrast_value = st.slider(
+        "コントラスト調整（1.0がデフォルト。大きくすると境界がハッキリ）",
+        min_value=1.0,
+        max_value=1.8,
+        value=1.2,
+        step=0.1,
+        help="数値を上げると白い商品と背景の境界がわかりやすくなります"
+    )
+    
+    if st.button("✂️ 背景を消す！", use_container_width=True):
         processed = []
         failed = []
         progress_bar = st.progress(0)
@@ -67,14 +69,11 @@ if uploaded_files:
                 img = Image.open(uploaded_file)
                 img = resize_image(img, max_size=800)
                 
-                # 2. エッジを強調！（これが重要！）
-                img = enhance_edges(img)
-                
-                # 3. コントラスト調整（補助的に）
+                # 2. コントラスト調整（エッジ強調なし！）
                 enhancer = ImageEnhance.Contrast(img)
-                img = enhancer.enhance(1.2)
+                img = enhancer.enhance(contrast_value)
                 
-                # 4. rembgで背景切り抜き
+                # 3. rembgで背景切り抜き
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
                 buf.seek(0)
@@ -137,3 +136,4 @@ if uploaded_files:
             with st.expander("⚠️ エラーが発生した画像"):
                 for f in failed:
                     st.error(f"❌ {f['name']}: {f['error']}")
+                    
