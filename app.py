@@ -11,19 +11,20 @@ st.set_page_config(page_title="西垣の切り抜き部屋 - 商品版", page_ic
 st.title("📦 西垣の切り抜き部屋（白背景専用）")
 st.write("背景の白だけを消して、商品の白は残します。")
 
-# ===== 白背景を透明にする関数 =====
-def remove_white_background(img, threshold=240):
+# ===== 白背景を透明にする関数（改良版） =====
+def remove_white_background(img, threshold=250):
     """
     白い背景（RGBがthreshold以上の部分）を透明にする
-    threshold: 240〜255で調整（数値が高いほど白だけを消す）
+    threshold: 250〜255で調整（高いほど「完全な白」だけを消す）
     """
     img = img.convert("RGBA")
     data = np.array(img)
     
-    # 白い部分を検出（RGBすべてがthreshold以上）
+    # 完全な白に近い部分だけを検出（threshold以上）
+    # AND条件で、すべてのRGBがthreshold以上
     white_mask = (data[:, :, 0] > threshold) & (data[:, :, 1] > threshold) & (data[:, :, 2] > threshold)
     
-    # 白い部分を透明に（アルファチャンネルを0に）
+    # 白い部分を透明に
     data[white_mask, 3] = 0
     
     return Image.fromarray(data, "RGBA")
@@ -62,6 +63,16 @@ if uploaded_files:
             img = resize_image(img, max_size=300)
             st.image(img, caption=file.name[:15], use_container_width=True)
     
+    # ===== スライダーで調整できるようにする =====
+    threshold = st.slider(
+        "白さの判定基準（数値が高いほど「完全な白」だけを消す）",
+        min_value=240,
+        max_value=255,
+        value=250,
+        step=1,
+        help="数値を上げると商品の白が残りやすくなります"
+    )
+    
     if st.button("✂️ 背景の白だけを消す！", use_container_width=True):
         processed = []
         failed = []
@@ -77,9 +88,9 @@ if uploaded_files:
                 img = Image.open(uploaded_file)
                 img = resize_image(img, max_size=800)
                 
-                # 2. コントラスト調整（必要に応じて）
+                # 2. コントラスト調整（弱めに）
                 enhancer = ImageEnhance.Contrast(img)
-                img = enhancer.enhance(1.2)
+                img = enhancer.enhance(1.1)  # 控えめに
                 
                 # 3. rembgで大まかに切り抜き
                 buf = io.BytesIO()
@@ -88,8 +99,8 @@ if uploaded_files:
                 result_bytes = remove(buf.getvalue(), session=session)
                 result = Image.open(io.BytesIO(result_bytes))
                 
-                # 4. 白背景を透明にする（これが重要！）
-                result = remove_white_background(result, threshold=240)
+                # 4. 白背景を透明にする（スライダーの値を使用）
+                result = remove_white_background(result, threshold=threshold)
                 
                 base_name = uploaded_file.name.rsplit('.', 1)[0]
                 processed.append({
@@ -147,4 +158,3 @@ if uploaded_files:
             with st.expander("⚠️ エラーが発生した画像"):
                 for f in failed:
                     st.error(f"❌ {f['name']}: {f['error']}")
-                    
