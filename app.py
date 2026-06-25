@@ -3,17 +3,11 @@ import streamlit_drawable_canvas as st_canvas
 import io
 from PIL import Image
 import numpy as np
-from rembg import remove, new_session
 
-st.set_page_config(page_title="西垣の切り抜き部屋 - 修正版", page_icon="✂️")
+st.set_page_config(page_title="範囲指定で切り抜き", page_icon="✂️")
 
-st.title("✂️ 西垣の切り抜き部屋（マウスで修正できる！）")
-st.write("🟢 緑の円＝復活（残す） 🔴 赤の円＝削除（消す）")
-
-# ===== AIセッション =====
-@st.cache_resource
-def get_session():
-    return new_session("u2net")
+st.title("✂️ 大まかに囲って切り抜き")
+st.write("画像の上で囲んだ部分だけを残します")
 
 # ===== 画像をリサイズ =====
 def resize_image(img, max_size=600):
@@ -23,9 +17,9 @@ def resize_image(img, max_size=600):
         return img.resize(new_size, Image.Resampling.LANCZOS)
     return img
 
-# ===== マスクを画像に適用する関数（簡易版） =====
-def apply_mask_to_image(image, mask_data):
-    """マスクデータを使って画像を修正（簡易版）"""
+# ===== 範囲指定で切り抜く関数 =====
+def crop_by_mask(image, mask_data):
+    """マスクデータを使って、囲んだ部分だけを残す"""
     if mask_data is None:
         return image
     
@@ -36,19 +30,18 @@ def apply_mask_to_image(image, mask_data):
     # マスクのRGB部分を取得
     mask = mask_data[:, :, :3]
     
-    # 緑色（復活）と赤色（削除）を検出
-    # 緑色の部分はそのまま、赤色の部分は透明に
-    green_mask = (mask[:, :, 0] < 100) & (mask[:, :, 1] > 150) & (mask[:, :, 2] < 100)
-    red_mask = (mask[:, :, 0] > 150) & (mask[:, :, 1] < 100) & (mask[:, :, 2] < 100)
+    # 描画された部分（色が付いている部分）を検出
+    # 黒以外の部分＝ユーザーが描いた部分
+    drawn_mask = np.any(mask > 100, axis=2)
     
-    # 赤い部分を透明に
-    img_array[red_mask, 3] = 0
+    # 描画されていない部分（外側）を透明に
+    img_array[~drawn_mask, 3] = 0
     
     return Image.fromarray(img_array, "RGBA")
 
 # ===== UI =====
 uploaded_file = st.file_uploader(
-    "画像をアップロード（1枚ずつ修正）",
+    "画像をアップロード",
     type=["png", "jpg", "jpeg"]
 )
 
@@ -58,66 +51,44 @@ if uploaded_file is not None:
     original_size = img.size
     img_display = resize_image(img, max_size=600)
     
-    col1, col2 = st.columns(2)
+    st.subheader("🖍️ 残したい部分を囲んでね")
+    st.write("画像の上をドラッグして、残したい部分を囲んでください")
     
-    with col1:
-        st.subheader("元の画像")
-        st.image(img_display, use_container_width=True)
+    # ===== 描画キャンバス =====
+    canvas_result = st_canvas.st_canvas(
+        fill_color="rgba(255, 0, 0, 0.2)",  # 塗りつぶし色
+        stroke_width=5,
+        stroke_color="#FF0000",
+        background_image=img_display,
+        update_streamlit=True,
+        height=img_display.height,
+        width=img_display.width,
+        drawing_mode="rect",  # 四角で囲む
+        key="crop_canvas",
+    )
     
+    col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        st.subheader("マスク（修正）")
-        st.write("🟢 緑で描くと『復活』 🔴 赤で描くと『削除』")
-        
-        # ===== 描画キャンバス（エラー回避のため修正） =====
-        try:
-            canvas_result = st_canvas.st_canvas(
-                fill_color="rgba(255, 0, 0, 0.3)",
-                stroke_width=15,
-                stroke_color="#00FF00",
-                background_image=img_display,
-                update_streamlit=True,
-                height=img_display.height,
-                width=img_display.width,
-                drawing_mode="freedraw",
-                key="canvas",
-            )
-        except Exception as e:
-            st.error(f"キャンバスの読み込みでエラーが発生しました: {e}")
-            canvas_result = None
-    
-    # ===== 処理ボタン =====
-    if st.button("✂️ 切り抜き実行！", use_container_width=True):
-        with st.spinner("処理中..."):
-            try:
-                # 1. rembgで大まかに切り抜き
-                buf = io.BytesIO()
-                img_display.save(buf, format="PNG")
-                buf.seek(0)
-                result_bytes = remove(buf.getvalue(), session=get_session())
-                result = Image.open(io.BytesIO(result_bytes))
-                
-                # 2. マスク情報があれば適用
-                if canvas_result is not None and canvas_result.image_data is not None:
-                    result = apply_mask_to_image(result, canvas_result.image_data)
-                
-                # 3. 元のサイズに戻す
-                if result.size != original_size:
+        if st.button("✂️ この範囲で切り抜く！", use_container_width=True):
+            if canvas_result.image_data is not None:
+                with st.spinner("切り抜き中..."):
+                    # 範囲指定で切り抜き
+                    result = crop_by_mask(img_display, canvas_result.image_data)
+                    # 元のサイズに戻す
                     result = result.resize(original_size, Image.Resampling.LANCZOS)
-                
-                # 4. 結果表示
-                st.success("✅ 切り抜き完了！")
-                st.image(result, caption="切り抜き結果", use_container_width=True)
-                
-                # ダウンロード
-                buf = io.BytesIO()
-                result.save(buf, format="PNG")
-                buf.seek(0)
-                st.download_button(
-                    "⬇️ ダウンロード",
-                    buf.getvalue(),
-                    file_name="切り抜き修正済み.png",
-                    mime="image/png"
-                )
-                
-            except Exception as e:
-                st.error(f"処理中にエラーが発生しました: {e}")
+                    
+                    st.success("✅ 切り抜き完了！")
+                    st.image(result, use_container_width=True)
+                    
+                    # ダウンロード
+                    buf = io.BytesIO()
+                    result.save(buf, format="PNG")
+                    buf.seek(0)
+                    st.download_button(
+                        "⬇️ ダウンロード",
+                        buf.getvalue(),
+                        file_name="囲んで切り抜き.png",
+                        mime="image/png"
+                    )
+            else:
+                st.warning("⚠️ まず画像の上で範囲を指定してください！")
