@@ -1,16 +1,16 @@
 import streamlit as st
 import io
-from PIL import Image
+from PIL import Image, ImageEnhance
 import zipfile
 from datetime import datetime
 from rembg import remove, new_session
 
 st.set_page_config(page_title="西垣の切り抜き部屋 - 商品版", page_icon="📦")
 
-st.title("📦 西垣の切り抜き部屋（色味そのまま）")
-st.write("商品の色を変えずに、背景だけを消します。")
+st.title("📦 西垣の切り抜き部屋（白背景専用）")
+st.write("背景の白だけを消して、商品はそのまま残します。")
 
-# ===== 画像リサイズ（色味は変えない） =====
+# ===== 画像リサイズ =====
 def resize_image(img, max_size=800):
     if max(img.size) > max_size:
         ratio = max_size / max(img.size)
@@ -21,8 +21,7 @@ def resize_image(img, max_size=800):
 # ===== AIセッション =====
 @st.cache_resource
 def get_session():
-    # u2net_human_seg は人物専用だが、白いものの認識に強いことも
-    return new_session("u2net_human_seg")
+    return new_session("u2net")
 
 # ===== UI =====
 uploaded_files = st.file_uploader(
@@ -45,7 +44,17 @@ if uploaded_files:
             img = resize_image(img, max_size=300)
             st.image(img, caption=file.name[:15], use_container_width=True)
     
-    if st.button("✂️ 背景を消す！（色は変えない）", use_container_width=True):
+    # ===== コントラスト調整用スライダー =====
+    contrast_value = st.slider(
+        "コントラスト調整（1.0がデフォルト。大きくすると境界がハッキリ）",
+        min_value=1.0,
+        max_value=1.8,
+        value=1.2,
+        step=0.1,
+        help="数値を上げると白い商品と背景の境界がわかりやすくなります"
+    )
+    
+    if st.button("✂️ 背景を消す！", use_container_width=True):
         processed = []
         failed = []
         progress_bar = st.progress(0)
@@ -56,11 +65,15 @@ if uploaded_files:
             try:
                 status_text.info(f"🔄 {i+1}/{len(uploaded_files)}枚目処理中: {uploaded_file.name}")
                 
-                # 1. 画像を開く（リサイズのみ、色調整なし）
+                # 1. 画像を開く
                 img = Image.open(uploaded_file)
                 img = resize_image(img, max_size=800)
                 
-                # 2. rembgで背景切り抜き（コントラスト調整なし！）
+                # 2. コントラスト調整（エッジ強調なし！）
+                enhancer = ImageEnhance.Contrast(img)
+                img = enhancer.enhance(contrast_value)
+                
+                # 3. rembgで背景切り抜き
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
                 buf.seek(0)
@@ -123,3 +136,4 @@ if uploaded_files:
             with st.expander("⚠️ エラーが発生した画像"):
                 for f in failed:
                     st.error(f"❌ {f['name']}: {f['error']}")
+                    
