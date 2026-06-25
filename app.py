@@ -6,17 +6,15 @@ import zipfile
 from datetime import datetime
 
 st.set_page_config(
-    page_title="🐾 ぱぱっと切り抜き動物園",
+    page_title="🐾 ぱぱっと切り抜き動物園（BiRefNet）",
     page_icon="🦁",
     layout="wide"
 )
 
-# ===== かわいいCSS =====
+# ===== かわいいCSS（短縮版） =====
 st.markdown("""
 <style>
-    .stApp {
-        background: linear-gradient(135deg, #fdf6e3, #f5e6d3) !important;
-    }
+    .stApp { background: linear-gradient(135deg, #fdf6e3, #f5e6d3) !important; }
     .main-header {
         text-align: center;
         padding: 1.5rem;
@@ -25,24 +23,10 @@ st.markdown("""
         margin-bottom: 2rem;
         box-shadow: 0 8px 32px rgba(0,0,0,0.08);
     }
-    .main-header h1 {
-        font-size: 3rem;
-        font-weight: 900;
-        color: #2d2a24;
-        letter-spacing: 2px;
-    }
-    .main-header h1 span {
-        color: #e67e22;
-    }
-    .animal-emoji {
-        font-size: 2.5rem;
-        display: inline-block;
-        animation: bounce 2s infinite;
-    }
-    @keyframes bounce {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-10px); }
-    }
+    .main-header h1 { font-size: 3rem; font-weight: 900; color: #2d2a24; letter-spacing: 2px; }
+    .main-header h1 span { color: #e67e22; }
+    .animal-emoji { font-size: 2.5rem; display: inline-block; animation: bounce 2s infinite; }
+    @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
     .cute-box {
         background: rgba(255,255,255,0.8);
         border-radius: 25px;
@@ -51,14 +35,8 @@ st.markdown("""
         border: 3px dashed #f1c40f;
         text-align: center;
     }
-    .cute-box .big-emoji {
-        font-size: 4rem;
-    }
-    .cute-box p {
-        font-size: 1.2rem;
-        color: #2d2a24;
-        font-weight: 500;
-    }
+    .cute-box .big-emoji { font-size: 4rem; }
+    .cute-box p { font-size: 1.2rem; color: #2d2a24; font-weight: 500; }
     .stButton > button {
         background: linear-gradient(135deg, #f39c12, #e67e22) !important;
         color: white !important;
@@ -84,15 +62,8 @@ st.markdown("""
         font-weight: 700;
         font-size: 0.8rem;
     }
-    .footer {
-        text-align: center;
-        padding: 2rem 0 1rem;
-        color: #8b7a6b;
-        font-size: 0.9rem;
-    }
-    .footer .animal {
-        font-size: 1.2rem;
-    }
+    .footer { text-align: center; padding: 2rem 0 1rem; color: #8b7a6b; font-size: 0.9rem; }
+    .footer .animal { font-size: 1.2rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -106,14 +77,14 @@ st.markdown("""
         <span class="animal-emoji">🐼</span>
         <span class="animal-emoji">🐨</span>
     </div>
-    <h1>🐾 ぱぱっと<span>切り抜き</span>動物園</h1>
+    <h1>🐾 ぱぱっと<span>切り抜き</span>動物園（BiRefNet）</h1>
     <p style="color:#8b7a6b; font-size:1.1rem;">
-        🎪 画像を入れると、背景をぱぱっと切り抜いちゃうよ！
+        🎪 最新AI「BiRefNet」で背景を切り抜いちゃうよ！
     </p>
     <p>
         <span class="animal-badge">🦊 最大5枚まで</span>
         <span class="animal-badge">🐼 無料</span>
-        <span class="animal-badge">🐨 かんたん</span>
+        <span class="animal-badge">🐨 高性能</span>
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -126,10 +97,11 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ===== 商品向けモデル（コントラスト調整なし） =====
+# ===== BiRefNet モデル（これがミソ！） =====
 @st.cache_resource
 def get_session():
-    return new_session("u2net_cloth_seg")
+    # ↓ ここを birefnet-general に変更！
+    return new_session("birefnet-general")
 
 uploaded_files = st.file_uploader(
     "",
@@ -159,20 +131,22 @@ if uploaded_files:
         failed = []
         
         animal_icons = ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷"]
-        session = get_session()
+        session = get_session()  # BiRefNet セッションを取得
         
         for i, file in enumerate(uploaded_files):
             try:
                 animal = animal_icons[i % len(animal_icons)]
                 status_text.info(f"{animal} {i+1}/{len(uploaded_files)}枚目 処理中… {file.name}")
                 
-                # ===== コントラスト調整なし！ =====
+                # ===== 画像を開く =====
                 img = Image.open(file)
                 
+                # ===== バイトに変換 =====
                 buf = io.BytesIO()
                 img.save(buf, format='PNG')
                 buf.seek(0)
                 
+                # ===== BiRefNet で背景除去！ =====
                 result_bytes = remove(buf.getvalue(), session=session)
                 result_img = Image.open(io.BytesIO(result_bytes))
                 
@@ -244,7 +218,7 @@ if uploaded_files:
 st.markdown("""
 <div class="footer">
     <span class="animal">🐾</span>
-    ぱぱっと切り抜き動物園 ｜ 背景切り抜き専門 🐘
+    ぱぱっと切り抜き動物園 ｜ BiRefNet搭載 🐘
     <span class="animal">🐾</span>
 </div>
 """, unsafe_allow_html=True)
