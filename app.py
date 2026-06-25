@@ -35,4 +35,3 @@ if uploaded_file is not None:
         )
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
-""", unsafe_allow_html=True)
