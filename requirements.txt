@@ -1,3 +1,4 @@
 streamlit
 rembg[cpu]
 Pillow
+streamlit-drawable-canvas
