@@ -8,13 +8,12 @@ from rembg import remove, new_session
 st.set_page_config(page_title="西垣の切り抜き部屋", page_icon="✂️")
 
 st.title("✂️ 西垣の切り抜き部屋")
-st.write("最大5枚まで一括処理できます")
+st.write("最大5枚まで一括処理できます（人物専用モデル使用）")
 
-# ===== AIセッションを作成（精度UP！） =====
 @st.cache_resource
 def get_session():
-    """AIモデルのセッションをキャッシュして高速化"""
-    return new_session()
+    # 人物専用モデルに変更！
+    return new_session("u2net_human_seg")
 
 uploaded_files = st.file_uploader(
     "画像を選んでね",
@@ -33,16 +32,12 @@ if uploaded_files:
         results = []
         progress = st.progress(0)
         status = st.empty()
-        
-        # セッションを取得（初回のみモデルロード）
         session = get_session()
         
         for i, f in enumerate(uploaded_files):
             status.info(f"{i+1}/{len(uploaded_files)}枚目 処理中...")
             try:
-                # 背景切り抜き（セッションを使用）
-                input_bytes = f.getvalue()
-                output_bytes = remove(input_bytes, session=session)
+                output_bytes = remove(f.getvalue(), session=session)
                 img = Image.open(io.BytesIO(output_bytes))
                 results.append(img)
             except Exception as e:
