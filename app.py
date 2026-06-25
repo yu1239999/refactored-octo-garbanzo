@@ -12,12 +12,11 @@ st.write("白い商品もキレイに切り抜きます")
 
 @st.cache_resource
 def get_session():
-    # デフォルトモデル（u2net）を使用
     return new_session("u2net")
 
 uploaded_files = st.file_uploader(
     "商品画像を選んでね",
-    type=["jpg", "jpeg", "png"],
+    type=["jpg", "jpeg", "png", "webp"],  # ← webpも追加
     accept_multiple_files=True
 )
 
@@ -37,48 +36,67 @@ if uploaded_files:
         for i, f in enumerate(uploaded_files):
             status.info(f"{i+1}/{len(uploaded_files)}枚目 処理中...")
             try:
-                # 画像を開く
-                img = Image.open(f)
+                # ===== エラー対策：画像を確実に開く =====
+                try:
+                    img = Image.open(f)
+                    # RGB変換（念のため）
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                except Exception as e:
+                    st.error(f"⚠️ {f.name} が開けません（ファイルが壊れてるかも）")
+                    continue
                 
-                # コントラストを少し上げて境界を明確に！
+                # コントラスト調整
                 enhancer = ImageEnhance.Contrast(img)
-                img = enhancer.enhance(1.2)  # 1.0がデフォルト
+                img = enhancer.enhance(1.2)
+                
+                # バイナリに変換
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                buf.seek(0)
                 
                 # 背景切り抜き
-                output_bytes = remove(img.tobytes(), session=session)
+                output_bytes = remove(buf.getvalue(), session=session)
                 result_img = Image.open(io.BytesIO(output_bytes))
                 results.append(result_img)
+                
             except Exception as e:
                 st.error(f"{f.name} でエラー: {e}")
+            
             progress.progress((i + 1) / len(uploaded_files))
         
         status.empty()
-        st.success("完了！ 🎉")
-        st.balloons()
         
-        for i, img in enumerate(results):
-            st.image(img, caption=uploaded_files[i].name, use_container_width=True)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            buf.seek(0)
-            st.download_button(
-                f"⬇️ {uploaded_files[i].name}",
-                buf.getvalue(),
-                file_name=f"切り抜き_{i}.png",
-                mime="image/png"
-            )
-        
-        if len(results) >= 2:
-            zip_buf = io.BytesIO()
-            with zipfile.ZipFile(zip_buf, 'w') as zf:
-                for i, img in enumerate(results):
-                    buf = io.BytesIO()
-                    img.save(buf, format="PNG")
-                    zf.writestr(f"切り抜き_{i}.png", buf.getvalue())
-            zip_buf.seek(0)
-            st.download_button(
-                "📦 ZIPで一括ダウンロード",
-                zip_buf.getvalue(),
-                file_name=f"切り抜き_{datetime.now().strftime('%H%M')}.zip",
-                mime="application/zip"
-            )
+        if results:
+            st.success(f"✅ {len(results)}枚処理完了！ 🎉")
+            st.balloons()
+            
+            for i, img in enumerate(results):
+                st.image(img, caption=f"切り抜き結果 {i+1}", use_container_width=True)
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                buf.seek(0)
+                st.download_button(
+                    f"⬇️ ダウンロード {i+1}",
+                    buf.getvalue(),
+                    file_name=f"切り抜き_{i+1}.png",
+                    mime="image/png"
+                )
+            
+            if len(results) >= 2:
+                zip_buf = io.BytesIO()
+                with zipfile.ZipFile(zip_buf, 'w') as zf:
+                    for i, img in enumerate(results):
+                        buf = io.BytesIO()
+                        img.save(buf, format="PNG")
+                        zf.writestr(f"切り抜き_{i+1}.png", buf.getvalue())
+                zip_buf.seek(0)
+                st.download_button(
+                    "📦 ZIPで一括ダウンロード",
+                    zip_buf.getvalue(),
+                    file_name=f"切り抜き_{datetime.now().strftime('%H%M')}.zip",
+                    mime="application/zip"
+                )
+        else:
+            st.error("❌ 処理できた画像がありませんでした")
+            
