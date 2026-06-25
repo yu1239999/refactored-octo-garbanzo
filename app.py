@@ -1,22 +1,22 @@
 import streamlit as st
 import io
-from PIL import Image
+from PIL import Image, ImageEnhance
 import zipfile
 from datetime import datetime
 from rembg import remove, new_session
 
-st.set_page_config(page_title="西垣の切り抜き部屋", page_icon="✂️")
+st.set_page_config(page_title="商品切り抜き部屋", page_icon="📦")
 
-st.title("✂️ 西垣の切り抜き部屋")
-st.write("最大5枚まで一括処理できます（人物専用モデル使用）")
+st.title("📦 商品切り抜き部屋")
+st.write("白い商品もキレイに切り抜きます")
 
 @st.cache_resource
 def get_session():
-    # 人物専用モデルに変更！
-    return new_session("u2net_human_seg")
+    # デフォルトモデル（u2net）を使用
+    return new_session("u2net")
 
 uploaded_files = st.file_uploader(
-    "画像を選んでね",
+    "商品画像を選んでね",
     type=["jpg", "jpeg", "png"],
     accept_multiple_files=True
 )
@@ -37,9 +37,17 @@ if uploaded_files:
         for i, f in enumerate(uploaded_files):
             status.info(f"{i+1}/{len(uploaded_files)}枚目 処理中...")
             try:
-                output_bytes = remove(f.getvalue(), session=session)
-                img = Image.open(io.BytesIO(output_bytes))
-                results.append(img)
+                # 画像を開く
+                img = Image.open(f)
+                
+                # コントラストを少し上げて境界を明確に！
+                enhancer = ImageEnhance.Contrast(img)
+                img = enhancer.enhance(1.2)  # 1.0がデフォルト
+                
+                # 背景切り抜き
+                output_bytes = remove(img.tobytes(), session=session)
+                result_img = Image.open(io.BytesIO(output_bytes))
+                results.append(result_img)
             except Exception as e:
                 st.error(f"{f.name} でエラー: {e}")
             progress.progress((i + 1) / len(uploaded_files))
