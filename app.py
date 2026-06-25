@@ -5,118 +5,68 @@ import io
 import zipfile
 from datetime import datetime
 
-st.set_page_config(
-    page_title="✂️ 西垣の切り抜き部屋",
-    page_icon="✂️",
-    layout="wide"
-)
+st.set_page_config(page_title="西垣の切り抜き部屋", page_icon="✂️")
 
 st.title("✂️ 西垣の切り抜き部屋")
-st.write("画像をアップロードすると背景を切り抜きます。最大5枚まで一括処理できます。")
+st.write("最大5枚まで一括処理できます")
 
-# ===== 5枚対応のアップロード =====
-uploaded_files = st.file_uploader(
-    "画像を選択（JPG・PNG）",
+# ファイルアップロード（5枚まで）
+files = st.file_uploader(
+    "画像を選んでね",
     type=["jpg", "jpeg", "png"],
     accept_multiple_files=True
 )
 
-if uploaded_files:
-    # 最大5枚に制限
-    if len(uploaded_files) > 5:
-        st.warning("⚠️ 最大5枚までです。最初の5枚を処理します。")
-        uploaded_files = uploaded_files[:5]
+if files:
+    # 5枚に制限
+    if len(files) > 5:
+        st.warning("5枚までだよ！")
+        files = files[:5]
     
-    st.info(f"📊 {len(uploaded_files)}枚の画像を処理します")
-    
-    # プレビュー表示
-    cols = st.columns(min(len(uploaded_files), 5))
-    for idx, file in enumerate(uploaded_files[:5]):
-        with cols[idx]:
-            img = Image.open(file)
-            st.image(img, caption=f"{file.name[:15]}...", use_container_width=True)
+    st.write(f"✅ {len(files)}枚 選択中")
     
     # 処理ボタン
-    if st.button("✂️ 切り抜き開始", use_container_width=True):
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+    if st.button("切り抜く！"):
+        results = []
         
-        processed = []
-        failed = []
+        for i, f in enumerate(files):
+            with st.spinner(f"{i+1}/{len(files)}枚目 処理中..."):
+                # 切り抜き
+                out = remove(f.getvalue())
+                img = Image.open(io.BytesIO(out))
+                results.append(img)
         
-        for i, file in enumerate(uploaded_files):
-            try:
-                status_text.info(f"🔄 {i+1}/{len(uploaded_files)}枚目処理中: {file.name}")
-                
-                # 背景切り抜き
-                result_bytes = remove(file.getvalue())
-                result_img = Image.open(io.BytesIO(result_bytes))
-                
-                base_name = file.name.rsplit('.', 1)[0]
-                processed.append({
-                    'name': f"{base_name}_切り抜き.png",
-                    'image': result_img,
-                    'original': file.name
-                })
-                
-                progress_bar.progress((i + 1) / len(uploaded_files))
-                
-            except Exception as e:
-                failed.append({'name': file.name, 'error': str(e)})
-                progress_bar.progress((i + 1) / len(uploaded_files))
+        st.success("完了！ 🎉")
+        st.balloons()
         
-        status_text.empty()
-        
-        # 結果表示
-        if processed:
-            st.success(f"✅ {len(processed)}枚の画像を処理しました！")
-            st.balloons()
+        # 結果を表示
+        for i, img in enumerate(results):
+            st.image(img, caption=files[i].name, use_container_width=True)
             
-            st.subheader("🖼️ 切り抜き結果")
-            
-            # 結果を2列で表示
-            result_cols = st.columns(2)
-            for idx, data in enumerate(processed):
-                with result_cols[idx % 2]:
-                    st.image(data['image'], caption=data['original'], use_container_width=True)
-                    
-                    # 個別ダウンロード
+            # ダウンロード
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            st.download_button(
+                f"⬇️ {files[i].name}",
+                buf.getvalue(),
+                file_name=f"切り抜き_{i}.png",
+                mime="image/png"
+            )
+        
+        # ZIPで一括ダウンロード
+        if len(results) > 1:
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, 'w') as zf:
+                for i, img in enumerate(results):
                     buf = io.BytesIO()
-                    data['image'].save(buf, format='PNG')
-                    buf.seek(0)
-                    
-                    st.download_button(
-                        label=f"⬇️ {data['name']}",
-                        data=buf.getvalue(),
-                        file_name=data['name'],
-                        mime="image/png",
-                        use_container_width=True,
-                        key=f"dl_{idx}"
-                    )
+                    img.save(buf, format="PNG")
+                    zf.writestr(f"切り抜き_{i}.png", buf.getvalue())
             
-            # ZIP一括ダウンロード
-            if processed:
-                zip_buf = io.BytesIO()
-                with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-                    for data in processed:
-                        img_bytes = io.BytesIO()
-                        data['image'].save(img_bytes, format='PNG')
-                        zf.writestr(data['name'], img_bytes.getvalue())
-                
-                zip_buf.seek(0)
-                
-                st.divider()
-                st.subheader("📦 一括ダウンロード")
-                st.download_button(
-                    label="📥 全ファイルをZIPでダウンロード",
-                    data=zip_buf.getvalue(),
-                    file_name=f"切り抜き_{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
-                    mime="application/zip",
-                    use_container_width=True
-                )
-        
-        # エラー表示
-        if failed:
-            with st.expander("⚠️ エラーが発生した画像"):
-                for f in failed:
-                    st.error(f"❌ {f['name']}: {f['error']}")
+            zip_buf.seek(0)
+            st.download_button(
+                "📦 全部まとめてZIP",
+                zip_buf.getvalue(),
+                file_name=f"切り抜き_{datetime.now().strftime('%H%M')}.zip",
+                mime="application/zip"
+            )
