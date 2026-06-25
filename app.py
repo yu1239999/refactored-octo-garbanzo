@@ -1,6 +1,6 @@
 import streamlit as st
-from rembg import remove
-from PIL import Image
+from rembg import remove, new_session
+from PIL import Image, ImageEnhance
 import io
 import zipfile
 from datetime import datetime
@@ -11,7 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# ===== かわいいCSS =====
+# ===== かわいいCSS（略） =====
 st.markdown("""
 <style>
     .stApp {
@@ -126,6 +126,12 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ===== 商品向けモデル（これがミソ！） =====
+@st.cache_resource
+def get_session():
+    # 商品・衣類向けモデル！
+    return new_session("u2net_cloth_seg")
+
 uploaded_files = st.file_uploader(
     "",
     type=["jpg", "jpeg", "png"],
@@ -154,13 +160,25 @@ if uploaded_files:
         failed = []
         
         animal_icons = ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷"]
+        session = get_session()  # ← 商品向けモデルをロード
         
         for i, file in enumerate(uploaded_files):
             try:
                 animal = animal_icons[i % len(animal_icons)]
                 status_text.info(f"{animal} {i+1}/{len(uploaded_files)}枚目 処理中… {file.name}")
                 
-                result_bytes = remove(file.getvalue())
+                # ===== 前処理：コントラスト調整（商品が白くても認識UP） =====
+                img = Image.open(file)
+                enhancer = ImageEnhance.Contrast(img)
+                img = enhancer.enhance(1.3)
+                
+                # バイトに変換
+                buf = io.BytesIO()
+                img.save(buf, format='PNG')
+                buf.seek(0)
+                
+                # ===== 商品向けモデルで背景除去！ =====
+                result_bytes = remove(buf.getvalue(), session=session)
                 result_img = Image.open(io.BytesIO(result_bytes))
                 
                 base_name = file.name.rsplit('.', 1)[0]
