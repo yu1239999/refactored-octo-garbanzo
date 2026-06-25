@@ -23,7 +23,12 @@ if uploaded_file is not None:
 
     with st.spinner("✂️ 切り抜き中..."):
         input_bytes = uploaded_file.getvalue()
-        response = requests.post(API_URL, headers=headers, data=input_bytes)
+       response = requests.post(
+    API_URL, 
+    headers=headers, 
+    data=input_bytes,
+    timeout=30
+)
         result = Image.open(io.BytesIO(response.content))
 
     with col2:
