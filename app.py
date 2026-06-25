@@ -235,4 +235,3 @@ st.markdown("""
     <span class="animal">🐾</span>
 </div>
 """, unsafe_allow_html=True)
-                    st.error(f"❌ {f['name']}: {f['error']}")
