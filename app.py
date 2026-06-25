@@ -5,23 +5,35 @@ import zipfile
 from datetime import datetime
 from rembg import remove, new_session
 
-st.set_page_config(page_title="西垣の切り抜き部屋 - 商品版", page_icon="📦")
+st.set_page_config(page_title="西垣の切り抜き部屋 - 拡大版", page_icon="🔍")
 
-st.title("📦 西垣の切り抜き部屋（色味そのまま）")
-st.write("商品の色を変えずに、背景だけを消します。")
+st.title("🔍 西垣の切り抜き部屋（拡大してから切り抜き）")
+st.write("画像を拡大して背景を消しやすくしてから、元のサイズに戻します。")
 
-# ===== 画像リサイズ（色味は変えない） =====
-def resize_image(img, max_size=800):
-    if max(img.size) > max_size:
-        ratio = max_size / max(img.size)
-        new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
-        return img.resize(new_size, Image.Resampling.LANCZOS)
-    return img
+# ===== 画像を拡大（ズーム）する関数 =====
+def zoom_image(img, zoom_factor=1.3):
+    """
+    画像を中心から拡大（ズーム）する
+    zoom_factor: 1.0〜2.0（1.3くらいがおすすめ）
+    """
+    w, h = img.size
+    new_w = int(w / zoom_factor)
+    new_h = int(h / zoom_factor)
+    
+    # 中心を切り抜く
+    left = (w - new_w) // 2
+    top = (h - new_h) // 2
+    right = left + new_w
+    bottom = top + new_h
+    
+    cropped = img.crop((left, top, right, bottom))
+    
+    # 元のサイズに拡大
+    return cropped.resize((w, h), Image.Resampling.LANCZOS)
 
 # ===== AIセッション =====
 @st.cache_resource
 def get_session():
-    # u2net_human_seg は人物専用だが、白いものの認識に強いことも
     return new_session("u2net_human_seg")
 
 # ===== UI =====
@@ -38,14 +50,22 @@ if uploaded_files:
     
     st.info(f"📸 {len(uploaded_files)}枚の画像を処理します")
     
+    zoom_factor = st.slider(
+        "拡大倍率（数値を上げると商品が大きく映ります）",
+        min_value=1.0,
+        max_value=2.0,
+        value=1.3,
+        step=0.05,
+        help="1.3倍くらいがおすすめ。大きくしすぎると商品の一部が切れます"
+    )
+    
     cols = st.columns(min(len(uploaded_files), 5))
     for idx, file in enumerate(uploaded_files[:5]):
         with cols[idx]:
             img = Image.open(file)
-            img = resize_image(img, max_size=300)
-            st.image(img, caption=file.name[:15], use_container_width=True)
+            st.image(img, caption=f"元画像: {file.name[:15]}", use_container_width=True)
     
-    if st.button("✂️ 背景を消す！（色は変えない）", use_container_width=True):
+    if st.button("✂️ 拡大してから切り抜く！", use_container_width=True):
         processed = []
         failed = []
         progress_bar = st.progress(0)
@@ -56,16 +76,22 @@ if uploaded_files:
             try:
                 status_text.info(f"🔄 {i+1}/{len(uploaded_files)}枚目処理中: {uploaded_file.name}")
                 
-                # 1. 画像を開く（リサイズのみ、色調整なし）
+                # 1. 画像を開く
                 img = Image.open(uploaded_file)
-                img = resize_image(img, max_size=800)
+                original_size = img.size  # ← 元のサイズを保存！
                 
-                # 2. rembgで背景切り抜き（コントラスト調整なし！）
+                # 2. 拡大（ズーム）する！
+                img_zoomed = zoom_image(img, zoom_factor=zoom_factor)
+                
+                # 3. rembgで背景切り抜き（拡大状態でやる）
                 buf = io.BytesIO()
-                img.save(buf, format="PNG")
+                img_zoomed.save(buf, format="PNG")
                 buf.seek(0)
                 result_bytes = remove(buf.getvalue(), session=session)
-                result = Image.open(io.BytesIO(result_bytes))
+                result_zoomed = Image.open(io.BytesIO(result_bytes))
+                
+                # 4. 元のサイズに縮小する！ ← ここが重要！
+                result = result_zoomed.resize(original_size, Image.Resampling.LANCZOS)
                 
                 base_name = uploaded_file.name.rsplit('.', 1)[0]
                 processed.append({
@@ -86,7 +112,7 @@ if uploaded_files:
             st.success(f"✅ {len(processed)}枚処理完了！")
             st.balloons()
             
-            st.subheader("🖼️ 切り抜き結果")
+            st.subheader("🖼️ 切り抜き結果（元のサイズに戻しました）")
             result_cols = st.columns(2)
             for idx, data in enumerate(processed):
                 with result_cols[idx % 2]:
