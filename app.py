@@ -1,95 +1,130 @@
 import streamlit as st
-import streamlit_drawable_canvas as st_canvas
 import io
 from PIL import Image
-import numpy as np
+import zipfile
+from datetime import datetime
+from rmbg import RMBG  # ← これが最強！
 
-st.set_page_config(page_title="自由線で切り抜き", page_icon="✂️")
+st.set_page_config(page_title="西垣の切り抜き部屋", page_icon="✂️")
 
-st.title("✂️ 自由線で囲って切り抜き")
-st.write("画像の上を自由に線で囲んで、その内側だけを残します")
+st.title("✂️ 西垣の切り抜き部屋（RMBG-2.0搭載）")
+st.write("世界最高峰のAIで背景を除去します。最大5枚まで一括処理できます。")
 
-# ===== 画像リサイズ =====
-def resize_image(img, max_size=600):
+# ===== RMBG-2.0 のセッション =====
+@st.cache_resource
+def get_rmbg_model():
+    """RMBG-2.0 モデルを読み込む（初回のみ）"""
+    return RMBG()
+
+# ===== 画像リサイズ（メモリ節約） =====
+def resize_image(img, max_size=800):
     if max(img.size) > max_size:
         ratio = max_size / max(img.size)
         new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
         return img.resize(new_size, Image.Resampling.LANCZOS)
     return img
 
-# ===== 囲んだ部分だけを残す関数 =====
-def keep_inside_mask(image, mask_data):
-    """自由線で囲んだ内側だけを残す"""
-    if mask_data is None:
-        return image
-    
-    # RGBAに変換
-    image = image.convert("RGBA")
-    img_array = np.array(image)
-    
-    # マスクのRGB部分を取得
-    mask = mask_data[:, :, :3]
-    
-    # 描画された部分（色が付いている部分）を検出
-    drawn_mask = np.any(mask > 50, axis=2)
-    
-    # 描画された部分（内側）をそのまま残す
-    # 外側を透明に（アルファチャンネルを0に）
-    result = image.copy()
-    result_array = np.array(result)
-    
-    # 描画されていない部分を透明に
-    result_array[~drawn_mask, 3] = 0
-    
-    return Image.fromarray(result_array, "RGBA")
-
 # ===== UI =====
-uploaded_file = st.file_uploader(
-    "画像をアップロード",
-    type=["png", "jpg", "jpeg"]
+uploaded_files = st.file_uploader(
+    "画像をアップロード（最大5枚）",
+    type=["png", "jpg", "jpeg"],
+    accept_multiple_files=True
 )
 
-if uploaded_file is not None:
-    # 画像を開く
-    img = Image.open(uploaded_file)
-    original_size = img.size
-    img_display = resize_image(img, max_size=600)
+if uploaded_files:
+    if len(uploaded_files) > 5:
+        st.warning("⚠️ 最大5枚までです。")
+        uploaded_files = uploaded_files[:5]
     
-    st.subheader("🖍️ 残したい部分を自由に囲んでね")
-    st.write("マウスをドラッグして、残したい部分を囲んでください")
+    st.info(f"📸 {len(uploaded_files)}枚の画像を処理します")
     
-    # 描画キャンバス（自由線モード）
-    canvas_result = st_canvas.st_canvas(
-        fill_color="rgba(255, 0, 0, 0.1)",  # 囲んだ内側の塗りつぶし（薄い赤）
-        stroke_width=3,
-        stroke_color="#FF0000",  # 赤い線
-        background_image=img_display,
-        update_streamlit=True,
-        height=img_display.height,
-        width=img_display.width,
-        drawing_mode="freedraw",  # ← これで自由線！
-        key="freedraw_canvas",
-    )
+    # プレビュー
+    cols = st.columns(min(len(uploaded_files), 5))
+    for idx, file in enumerate(uploaded_files[:5]):
+        with cols[idx]:
+            img = Image.open(file)
+            img = resize_image(img, max_size=200)
+            st.image(img, caption=file.name[:15], use_container_width=True)
     
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button("✂️ 囲んだ内側を切り抜く！", use_container_width=True):
-            if canvas_result.image_data is not None:
-                with st.spinner("切り抜き中..."):
-                    result = keep_inside_mask(img_display, canvas_result.image_data)
-                    result = result.resize(original_size, Image.Resampling.LANCZOS)
-                    
-                    st.success("✅ 切り抜き完了！")
-                    st.image(result, use_container_width=True)
-                    
+    if st.button("✂️ 最強AIで背景除去！", use_container_width=True):
+        processed = []
+        failed = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # モデルをロード
+        model = get_rmbg_model()
+        
+        for i, uploaded_file in enumerate(uploaded_files):
+            try:
+                status_text.info(f"🔄 {i+1}/{len(uploaded_files)}枚目処理中: {uploaded_file.name}")
+                
+                # 画像を開く
+                img = Image.open(uploaded_file)
+                original_size = img.size
+                
+                # メモリ節約のためにリサイズ
+                img = resize_image(img, max_size=800)
+                
+                # ===== RMBG-2.0 で背景除去（これが最強！） =====
+                result = model.remove_background(img)
+                
+                # 元のサイズに戻す
+                result = result.resize(original_size, Image.Resampling.LANCZOS)
+                
+                base_name = uploaded_file.name.rsplit('.', 1)[0]
+                processed.append({
+                    'name': f"{base_name}_切り抜き.png",
+                    'image': result,
+                    'original': uploaded_file.name
+                })
+                
+                progress_bar.progress((i + 1) / len(uploaded_files))
+                
+            except Exception as e:
+                failed.append({'name': uploaded_file.name, 'error': str(e)})
+                progress_bar.progress((i + 1) / len(uploaded_files))
+        
+        status_text.empty()
+        
+        if processed:
+            st.success(f"✅ {len(processed)}枚処理完了！")
+            st.balloons()
+            
+            st.subheader("🖼️ 切り抜き結果")
+            result_cols = st.columns(2)
+            for idx, data in enumerate(processed):
+                with result_cols[idx % 2]:
+                    st.image(data['image'], caption=data['original'], use_container_width=True)
                     buf = io.BytesIO()
-                    result.save(buf, format="PNG")
+                    data['image'].save(buf, format='PNG')
                     buf.seek(0)
                     st.download_button(
-                        "⬇️ ダウンロード",
-                        buf.getvalue(),
-                        file_name="自由線で切り抜き.png",
-                        mime="image/png"
+                        label=f"⬇️ {data['name']}",
+                        data=buf.getvalue(),
+                        file_name=data['name'],
+                        mime="image/png",
+                        use_container_width=True,
+                        key=f"dl_{idx}"
                     )
-            else:
-                st.warning("⚠️ まず画像の上で自由に線を描いてください！")
+            
+            if len(processed) >= 2:
+                zip_buf = io.BytesIO()
+                with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    for data in processed:
+                        img_bytes = io.BytesIO()
+                        data['image'].save(img_bytes, format='PNG')
+                        zf.writestr(data['name'], img_bytes.getvalue())
+                zip_buf.seek(0)
+                st.download_button(
+                    label="📥 全ファイルをZIPでダウンロード",
+                    data=zip_buf.getvalue(),
+                    file_name=f"切り抜き_{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
+                    mime="application/zip",
+                    use_container_width=True
+                )
+        
+        if failed:
+            with st.expander("⚠️ エラーが発生した画像"):
+                for f in failed:
+                    st.error(f"❌ {f['name']}: {f['error']}")
