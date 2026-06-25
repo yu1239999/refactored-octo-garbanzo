@@ -1,6 +1,6 @@
 import streamlit as st
 from rembg import remove, new_session
-from PIL import Image, ImageEnhance
+from PIL import Image
 import io
 import zipfile
 from datetime import datetime
@@ -126,7 +126,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ===== 商品向けモデル =====
+# ===== 商品向けモデル（コントラスト調整なし） =====
 @st.cache_resource
 def get_session():
     return new_session("u2net_cloth_seg")
@@ -166,9 +166,8 @@ if uploaded_files:
                 animal = animal_icons[i % len(animal_icons)]
                 status_text.info(f"{animal} {i+1}/{len(uploaded_files)}枚目 処理中… {file.name}")
                 
+                # ===== コントラスト調整なし！ =====
                 img = Image.open(file)
-                enhancer = ImageEnhance.Contrast(img)
-                img = enhancer.enhance(1.3)
                 
                 buf = io.BytesIO()
                 img.save(buf, format='PNG')
