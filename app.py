@@ -5,6 +5,7 @@ from PIL import Image
 
 API_URL = "https://api-inference.huggingface.co/models/briaai/RMBG-1.4"
 API_TOKEN = "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"
+
 headers = {"Authorization": f"Bearer {API_TOKEN}"}
 
 st.set_page_config(page_title="西垣の切り抜き部屋", page_icon="✂️")
@@ -23,12 +24,12 @@ if uploaded_file is not None:
 
     with st.spinner("✂️ 切り抜き中..."):
         input_bytes = uploaded_file.getvalue()
-       response = requests.post(
-    API_URL, 
-    headers=headers, 
-    data=input_bytes,
-    timeout=30
-)
+        response = requests.post(
+            API_URL,
+            headers=headers,
+            data=input_bytes,
+            timeout=60
+        )
         result = Image.open(io.BytesIO(response.content))
 
     with col2:
